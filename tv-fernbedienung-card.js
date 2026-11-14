@@ -3,7 +3,17 @@
  * in Home Assistant. Nur Geräte auswählen, fertig.
  * https://github.com/sampvp-cmyk/tv-fernbedienung-card
  */
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
+
+// Tasten, die sich beim Gedrückthalten wiederholen – wie bei einer echten Fernbedienung.
+const HALTEN_TASTEN = new Set([
+  "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT",
+  "CHANNEL_UP", "CHANNEL_DOWN",
+  "MEDIA_REWIND", "MEDIA_FAST_FORWARD",
+  "DEL",
+]);
+const HALTEN_START_MS = 450; // so lange halten, bis die Wiederholung beginnt
+const HALTEN_TAKT_MS = 250;  // Abstand zwischen den Wiederholungen
 
 const DEFAULT_APPS = [
   { name: "waipu.tv", key: "HOME", package: "de.exaring.waipu", icon: "mdi:television-classic", color: "#00a3b4", background: "#ffffff" },
@@ -24,6 +34,8 @@ class TvFernbedienungCard extends HTMLElement {
     this._tab = null; // null | "medien" | "apps" | "sender"
     this._keyboard = false;
     this._sig = "";
+    this._halten = null; // beendet eine laufende Halten-Wiederholung
+    this._renderNachHalten = false;
   }
 
   static getConfigElement() {
@@ -67,7 +79,10 @@ class TvFernbedienungCard extends HTMLElement {
     ]);
     if (sig !== this._sig) {
       this._sig = sig;
-      this._render();
+      // Während einer Halten-Wiederholung nicht neu aufbauen (z. B. wenn sich die
+      // Lautstärke dabei ändert) – sonst verschwindet die gehaltene Taste unterm Finger.
+      if (this._halten) this._renderNachHalten = true;
+      else this._render();
     }
   }
 
@@ -144,6 +159,10 @@ class TvFernbedienungCard extends HTMLElement {
 
   _render() {
     if (!this._config || !this._hass) return;
+    // Läuft gerade eine Halten-Wiederholung, beenden – sonst liefe sie auf dem
+    // gleich entfernten Knopf endlos weiter.
+    this._renderNachHalten = false;
+    this._halten?.();
     const c = this._config;
     const remote = this._st(c.remote);
     const mp = this._st(c.media_player);
@@ -272,12 +291,48 @@ class TvFernbedienungCard extends HTMLElement {
             </div>`
       }`;
 
-    this.shadowRoot.querySelectorAll("[data-a]").forEach((el) =>
-      el.addEventListener("click", (ev) => {
+    const wiederholbar = (el) =>
+      el.dataset.a === "vol_up" || el.dataset.a === "vol_down" ||
+      (el.dataset.a === "key" && HALTEN_TASTEN.has(el.dataset.v));
+    this.shadowRoot.querySelectorAll("[data-a]").forEach((el) => {
+      if (!wiederholbar(el)) {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this._do(el.dataset.a, el.dataset.v);
+        });
+        return;
+      }
+      // Gedrückthalten wiederholt die Taste – wie bei einer echten Fernbedienung.
+      el.style.touchAction = "none"; // Finger darf beim Halten leicht wackeln, ohne zu scrollen
+      let verzoegerung = null, takt = null;
+      const stop = () => {
+        clearTimeout(verzoegerung);
+        clearInterval(takt);
+        verzoegerung = takt = null;
+        el.classList.remove("halten");
+        this._halten = null;
+        if (this._renderNachHalten) {
+          this._renderNachHalten = false;
+          this._render();
+        }
+      };
+      el.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
         ev.stopPropagation();
+        try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+        this._halten?.();
+        this._halten = stop;
+        el.classList.add("halten");
         this._do(el.dataset.a, el.dataset.v);
-      })
-    );
+        verzoegerung = setTimeout(() => {
+          takt = setInterval(() => this._do(el.dataset.a, el.dataset.v), HALTEN_TAKT_MS);
+        }, HALTEN_START_MS);
+      });
+      for (const e of ["pointerup", "pointercancel"]) el.addEventListener(e, stop);
+      // Der Klick wurde schon beim Drücken gesendet – nicht doppelt auslösen.
+      el.addEventListener("click", (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+      el.addEventListener("contextmenu", (ev) => ev.preventDefault());
+    });
     const v = this.shadowRoot.querySelector("#vol");
     if (v)
       v.addEventListener("change", () =>
@@ -329,9 +384,9 @@ const CSS = `
 :host { display:block; --bg:#262628; --btn:#3a3a3c; --deep:#1c1c1e; --fg:#f2f2f2; --muted:#9a9a9e; --accent:#ff5a1f; --title:#4c9bff; }
 ha-card { background:var(--bg); border-radius:32px; border:none; box-shadow:none; padding:14px 14px 18px; color:var(--fg); }
 ha-card.off { opacity:.55; }
-button { font:inherit; color:inherit; border:none; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+button { font:inherit; color:inherit; border:none; cursor:pointer; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .b { display:flex; align-items:center; justify-content:center; background:none; padding:0; }
-.b:active, .app:active, .pill:active, .tab:active { transform:scale(.94); }
+.b:active, .b.halten, .app:active, .pill:active, .tab:active { transform:scale(.94); }
 .top { display:flex; align-items:center; justify-content:space-between; }
 .title { color:var(--title); font-size:20px; font-weight:600; text-align:center; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .power, .mute { width:48px; height:48px; --mdc-icon-size:30px; }
