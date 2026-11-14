@@ -11,7 +11,7 @@ Du wählst nur die Geräte aus – Steuerkreuz, Lautstärke, Apps, Ziffernblock 
 - **Medien**: was gerade läuft, Lautstärke-Regler, Licht am Fernseher, TV an/aus
 - **Apps**: App-Kacheln, die laufende App wird markiert
 - **Sender**: Ziffernblock
-- **Tastatur**: Text an den Fernseher schicken
+- **Tastatur**: Tippen geht sofort an den Fernseher – jeder Buchstabe und jedes Löschen live, wie beim Ziffernblock
 
 ## Installieren
 

@@ -3,7 +3,7 @@
  * in Home Assistant. Nur Geräte auswählen, fertig.
  * https://github.com/sampvp-cmyk/tv-fernbedienung-card
  */
-const VERSION = "1.0.1";
+const VERSION = "1.1.0";
 
 const DEFAULT_APPS = [
   { name: "waipu.tv", key: "HOME", package: "de.exaring.waipu", icon: "mdi:television-classic", color: "#00a3b4", background: "#ffffff" },
@@ -233,7 +233,8 @@ class TvFernbedienungCard extends HTMLElement {
         </div>
         ${
           this._keyboard
-            ? `<div class="kbd"><input id="kbd" type="text" placeholder="Text eingeben …" autocomplete="off">
+            ? `<div class="kbd"><input id="kbd" type="text" placeholder="Tippen geht sofort an den Fernseher …"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                ${this._btn("key", "ENTER", "mdi:keyboard-return", "round s", "Enter")}</div>`
             : ""
         }
@@ -283,15 +284,27 @@ class TvFernbedienungCard extends HTMLElement {
         this._call("media_player", "volume_set", { entity_id: c.media_player, volume_level: Number(v.value) / 100 })
       );
     const k = this.shadowRoot.querySelector("#kbd");
-    if (k)
+    if (k) {
+      // Jede Eingabe geht sofort an den Fernseher – wie die Zahlen im Sender-Block.
+      k.addEventListener("beforeinput", (ev) => {
+        if (ev.inputType === "deleteContentBackward" || ev.inputType === "deleteWordBackward") {
+          this._key("DEL");
+        } else if (ev.data) {
+          // Auch eingefügter Text oder Wortvorschläge kommen hier als ev.data an.
+          for (const zeichen of ev.data) {
+            if (zeichen === " ") this._key("KEYCODE_SPACE");
+            else this._call("remote", "send_command", { entity_id: c.remote, command: `text:${zeichen}` });
+          }
+        }
+      });
       k.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") {
           ev.preventDefault();
-          if (k.value) this._call("remote", "send_command", { entity_id: c.remote, command: `text:${k.value}` });
           k.value = "";
           this._key("ENTER");
         }
       });
+    }
   }
 }
 
