@@ -3,7 +3,7 @@
  * in Home Assistant. Nur Geräte auswählen, fertig.
  * https://github.com/sampvp-cmyk/tv-fernbedienung-card
  */
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 
 const DEFAULT_APPS = [
   { name: "waipu.tv", key: "HOME", package: "de.exaring.waipu", icon: "mdi:television-classic", color: "#00a3b4", background: "#ffffff" },
@@ -286,22 +286,35 @@ class TvFernbedienungCard extends HTMLElement {
     const k = this.shadowRoot.querySelector("#kbd");
     if (k) {
       // Jede Eingabe geht sofort an den Fernseher – wie die Zahlen im Sender-Block.
-      k.addEventListener("beforeinput", (ev) => {
-        if (ev.inputType === "deleteContentBackward" || ev.inputType === "deleteWordBackward") {
-          this._key("DEL");
-        } else if (ev.data) {
-          // Auch eingefügter Text oder Wortvorschläge kommen hier als ev.data an.
-          for (const zeichen of ev.data) {
-            if (zeichen === " ") this._key("KEYCODE_SPACE");
-            else this._call("remote", "send_command", { entity_id: c.remote, command: `text:${zeichen}` });
-          }
+      // Statt einzelner Tasten-Ereignisse vergleichen wir den Feldinhalt vorher/nachher:
+      // das "input"-Ereignis feuert auf jedem Gerät (auch iPhone-Tastatur mit
+      // Autokorrektur) zuverlässig, egal wie das Zeichen zustande kam.
+      let alt = k.value;
+      const senden = (text) => {
+        for (const zeichen of text) {
+          if (zeichen === " ") this._key("KEYCODE_SPACE");
+          else this._call("remote", "send_command", { entity_id: c.remote, command: `text:${zeichen}` });
         }
+      };
+      k.addEventListener("input", () => {
+        const neu = k.value;
+        let anfang = 0;
+        while (anfang < alt.length && anfang < neu.length && alt[anfang] === neu[anfang]) anfang++;
+        let endeAlt = alt.length, endeNeu = neu.length;
+        while (endeAlt > anfang && endeNeu > anfang && alt[endeAlt - 1] === neu[endeNeu - 1]) { endeAlt--; endeNeu--; }
+        for (let i = anfang; i < endeAlt; i++) this._key("DEL");
+        senden(neu.slice(anfang, endeNeu));
+        alt = neu;
       });
       k.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") {
           ev.preventDefault();
           k.value = "";
+          alt = "";
           this._key("ENTER");
+        } else if (ev.key === "Backspace" && !k.value) {
+          // Feld ist leer: am Fernseher trotzdem löschen
+          this._key("DEL");
         }
       });
     }
