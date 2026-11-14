@@ -3,7 +3,7 @@
  * in Home Assistant. Nur Geräte auswählen, fertig.
  * https://github.com/sampvp-cmyk/tv-fernbedienung-card
  */
-const VERSION = "1.1.1";
+const VERSION = "1.2.0";
 
 const DEFAULT_APPS = [
   { name: "waipu.tv", key: "HOME", package: "de.exaring.waipu", icon: "mdi:television-classic", color: "#00a3b4", background: "#ffffff" },
@@ -290,9 +290,13 @@ class TvFernbedienungCard extends HTMLElement {
       // das "input"-Ereignis feuert auf jedem Gerät (auch iPhone-Tastatur mit
       // Autokorrektur) zuverlässig, egal wie das Zeichen zustande kam.
       let alt = k.value;
+      // Buchstaben/Zahlen als echte Tastendrücke (wie der Ziffernblock) – die
+      // Text-Eingabe (text:…) ignorieren manche Sticks, z. B. der waipu-Stick.
+      const SONDER = { " ": "SPACE", ".": "PERIOD", ",": "COMMA", "-": "MINUS", "+": "PLUS", "@": "AT", "*": "STAR", "/": "SLASH", "'": "APOSTROPHE", "=": "EQUALS", ";": "SEMICOLON" };
       const senden = (text) => {
         for (const zeichen of text) {
-          if (zeichen === " ") this._key("KEYCODE_SPACE");
+          if (/[a-z0-9]/i.test(zeichen)) this._key(`KEYCODE_${zeichen.toUpperCase()}`);
+          else if (SONDER[zeichen]) this._key(`KEYCODE_${SONDER[zeichen]}`);
           else this._call("remote", "send_command", { entity_id: c.remote, command: `text:${zeichen}` });
         }
       };
